@@ -205,14 +205,14 @@ function CreateShaderProgram(inShowCorrectValue) {
 	if (inShowCorrectValue) {
  		// Results in correct value (2)		
 		fx_source.push(
-			"gl_FragColor = vec4(PowersOf2(data.r), PowersOf2(data.g), PowersOf2(4.0), 1.0); "
+			"gl_FragColor = vec4(PowersOf2(data.r), PowersOf2(data.g), PowersOf2(4.0), data.r/255.0); "
 		);
 	}
 	else
 	{
 		// Results in wrong value (127)
 		fx_source.push(
-			"gl_FragColor = vec4(PowersOf2(value), PowersOf2(data.g), PowersOf2(4.0), 1.0); "
+			"gl_FragColor = vec4(PowersOf2(value), PowersOf2(data.g), PowersOf2(4.0), value/255.0); "
 		);
 	}
 	
