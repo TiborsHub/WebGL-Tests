@@ -199,8 +199,10 @@ const ourGLchar *vertexShaderSource[] = {
 };
 
 
-// NOTE the color will only be red if the value after decrementing is -9 otherwise it will be green
 // Pre decrement does a' = -a + 1 instead of a' = a - 1, only a unit test with a = 1 :-) ?
+// The color will only be blue if the value after decrementing is -9 
+// It will be green if pre_dec has the correct value (9)
+// Otherwise it will be red
 const ourGLchar *fragmentShaderSource[] = {
    "#version 140\n",
    "out vec4 fg_FragColor;\n",
@@ -208,10 +210,12 @@ const ourGLchar *fragmentShaderSource[] = {
    "{\n",
    "   float pre_dec = 10.0;\n",
    "   --pre_dec;\n",
-   "   if (pre_dec == -9.0)\n",
-   "       fg_FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);\n", // Red
-   "   else\n",
+   "   if (pre_dec == 9.0)\n",
    "       fg_FragColor = vec4(0.0f, 1.0f, 0.0f, 1.0f);\n", // Green
+   "   else if (pre_dec == -9.0)\n",
+   "       fg_FragColor = vec4(0.0f, 0.0f, 1.0f, 1.0f);\n", // Blue
+   "   else\n",
+   "       fg_FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);\n", // Red
    "}\n"
 };
 
