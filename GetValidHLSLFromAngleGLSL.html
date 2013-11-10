@@ -300,7 +300,12 @@ function OnLoad() {
 	gTestOutput.value = "";
     	
 	var debug_ext = gWebGL.getExtension("WEBGL_debug_shaders");
-	LogTestOutput("Extension WEBGL_debug_shaders " + (debug_ext == null ? "not availabe, no" : "availabe,") + " retrieval of HLSL code possible");
+	if (debug_ext === null) {
+		LogTestOutput("Extension WEBGL_debug_shaders not availabe, no retrieval of HLSL code possible");
+		LogTestOutput("Chrome : start with --enable-privileged-webgl-extensions as commandline parameter");
+	}
+    else 
+		LogTestOutput("Extension WEBGL_debug_shaders availabe, retrieval of HLSL code possible");
     	
     gWebGL.viewport(0, 0, gWebGL.drawingBufferWidth, gWebGL.drawingBufferHeight);
 }
