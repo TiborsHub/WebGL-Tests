@@ -14,6 +14,7 @@ Test to show invalid combinations of arguments to constructors for vector and ma
 <!-- Globals -->
 	
 gWebGL = null;
+gTestOutput = null;
 
 
 <!-- WebGL initialization -->
@@ -45,6 +46,15 @@ function ShowMessage(inMsg, inCanvas) {
     	container.innerHTML = CreateMessageHTML(inMsg);
     }
 };
+
+
+// Log output
+function LogTestOutput(inText) {
+	if (gTestOutput != null)
+		gTestOutput.value += inText + "\n";
+		
+	console.log(inText);	
+}
 
     
 // Returns the webgl attributes with default values    
@@ -109,7 +119,7 @@ function CreateShader(inSource, inType) {
 	var type_name = GetShaderTypeName(inType);
 	
 	// Log GLSL code
-	console.log("\nGLSL " + type_name + " BEGIN ->\n", inSource, "\n<- GLSL " + type_name + " END\n");
+	LogTestOutput("\nGLSL " + type_name + " BEGIN ->\n" + inSource + "\n<- GLSL " + type_name + " END\n");
 	 	
  	gWebGL.shaderSource(handle, inSource);
  	gWebGL.compileShader(handle);
@@ -121,10 +131,10 @@ function CreateShader(inSource, inType) {
 		var debug_ext = gWebGL.getExtension("WEBGL_debug_shaders");
 		if (debug_ext !== null) { 					
 			var hlsl_code = debug_ext.getTranslatedShaderSource(handle);
-			console.log("\nHLSL " + type_name + " BEGIN ->\n", hlsl_code, "\n<- HLSL " + type_name + " END\n");
+			LogTestOutput("\nHLSL " + type_name + " BEGIN ->\n" + hlsl_code + "\n<- HLSL " + type_name + " END\n");
 		}
 		else
-			console.log("Extension WEBGL_debug_shaders not availabe, no retrieval of HLSL code possible");
+			LogTestOutput("Extension WEBGL_debug_shaders not availabe, no retrieval of HLSL code possible");
 	}
 	    
     if (!compiled && !gWebGL.isContextLost()) {
@@ -284,15 +294,15 @@ function OnLoad() {
     
     if (gWebGL == null)
     	return;
+
+    // Output window contains some spaces already ?!
+	gTestOutput = document.getElementById("TestOutput");
+	gTestOutput.value = "";
     	
 	var debug_ext = gWebGL.getExtension("WEBGL_debug_shaders");
-	console.log("Extension WEBGL_debug_shaders " + (debug_ext == null ? "not availabe, no" : "availabe,") + " retrieval of HLSL code possible");
+	LogTestOutput("Extension WEBGL_debug_shaders " + (debug_ext == null ? "not availabe, no" : "availabe,") + " retrieval of HLSL code possible");
     	
     gWebGL.viewport(0, 0, gWebGL.drawingBufferWidth, gWebGL.drawingBufferHeight);
-    
-    // Output window contains some spaces already ?!
-	var test_output = document.getElementById("TestOutput");
-	test_output.value = "";
 }
 
 </script>
