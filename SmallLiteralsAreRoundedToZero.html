@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Small literals are rounded to zero depending on representation</title>
+
+<!--
+Test to show that small literals are set to zero if the representation is 1.0E-9
+and not equal to zero of representation is 1.0/1000.0/1000.0/1000.0
+
+Issue found on :
+IE11, 11.0.9600.17107, 11.0.8
+Reported WebGL version : 0.93 
+
+Author : Tibor den Ouden  
+Date   : 19 May 2014 
+-->
+
+<script>
+"use strict";
+
+<!-- Globals -->
+var gWebGL = null;
+
+
+<!-- WebGL initialization -->
+
+// Message when browser does not support WebGL
+var NO_WEBGL_BROWSER = '<a href="http://get.webgl.org">This page requires a browser that supports WebGL.</a>';
+
+
+// Message when computer does not support WebGL
+var NO_WEBGL_CONTEXT = '<a href="http://get.webgl.org/troubleshooting/">This computer does not support WebGL.</a>';
+
+
+// Creates html code which contains a message
+function CreateMessageHTML(inMsg) {
+  return '' +
+    '<table style="background-color: #8CE; width: 100%; height: 100%;"><tr>' +
+    '<td align="center">' +
+    '<div style="display: table-cell; vertical-align: middle;">' +
+    '<div style="">' + inMsg + '</div>' +
+    '</div>' +
+    '</td></tr></table>';
+};
+
+
+function CheckAndDisplayError(inMsg) {
+    if (gWebGL == null)
+        return;
+        
+    var error = gWebGL.getError();
+    if (error != gWebGL.NONE)
+    	alert(inMsg + " : 0x" + error.toString(16)); 
+}
+
+
+// Show the message in the page
+function ShowMessage(inMsg, inCanvas) {
+    var container = inCanvas.parentNode;
+    if (container) {
+    	container.innerHTML = CreateMessageHTML(inMsg);
+    }
+};
+
+    
+// Returns the webgl attributes with default values    
+function GetDefaultWebGLAttributes() {
+	return {
+    	alpha:                 true,
+    	depth:                 true,
+    	stencil:               false,
+    	antialias:             true,
+    	premultipliedAlpha:    true,
+    	preserveDrawingBuffer: false,
+	};
+}
+
+
+function setter1f(inLocation, inValue) {
+	gWebGL.uniform1f(inLocation, inValue);
+}
+
+
+// Return a WebGL context from the canvas element
+function InitWebGL(inCanvas, inWglAttributes) {
+    // Check if browser supports WebGL
+   	if (!window.WebGLRenderingContext) {
+    	ShowMessage(NO_WEBGL_BROWSER, inCanvas);
+        return null;
+   	}
+
+	// Iterate over valid 3D context names
+	var context_names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
+	var wgl_context = null;
+	for (var n_ix = 0; n_ix < context_names.length; ++n_ix) {
+		try {
+			wgl_context = inCanvas.getContext(context_names[n_ix], inWglAttributes);
+		} 
+		catch(inException) {
+		}
+		
+		if (wgl_context != null) 
+			break;
+	}
+  
+    if (wgl_context == null) {
+    	ShowMessage(NO_WEBGL_CONTEXT, inCanvas);
+    }
+
+	return wgl_context;
+}
+
+ 
+<!-- Utility functions for test -->
+
+function CreateShader(inSource, inType) {
+ 	var handle = gWebGL.createShader(inType);
+ 	
+ 	gWebGL.shaderSource(handle, inSource);
+ 	gWebGL.compileShader(handle);
+
+    // Check the compile status
+    var compiled = gWebGL.getShaderParameter(handle, gWebGL.COMPILE_STATUS);
+    if (!compiled && !gWebGL.isContextLost()) {
+        // Retrieve info
+        var error_text = gWebGL.getShaderInfoLog(handle);
+        alert("Error compiling shader : " + error_text);
+        
+        gWebGL.deleteShader(handle);
+        handle = null;
+    }
+
+	return handle;	
+}
+
+
+function BindAndSetUniform(inName, inSetter, inValue, inProgramHandle) {
+	var location = gWebGL.getUniformLocation(inProgramHandle, inName);
+	
+ 	if (location == null) {
+ 		alert("Uniform : " + inName  + " not found");
+ 		return;
+ 	}
+ 	
+ 	inSetter(location, inValue);
+ 	
+ 	CheckAndDisplayError("BindAndSetUniform(), (" + inName + ") : ");
+}
+
+
+function CreateShaderProgram(inVxSrc, inFxSrc) {
+	// Vertex shader
+	var vx_handle = CreateShader(inVxSrc.join("\n"), gWebGL.VERTEX_SHADER);
+	
+	
+	// Fragment shader
+	var fx_handle = CreateShader(inFxSrc.join("\n"), gWebGL.FRAGMENT_SHADER);
+	
+	
+    // Create the shader program object
+    var prg_handle = gWebGL.createProgram();
+
+    gWebGL.attachShader(prg_handle, vx_handle);
+    gWebGL.attachShader(prg_handle, fx_handle);
+
+    // Link the program
+    gWebGL.linkProgram(prg_handle);
+
+    // Check the link status
+    var linked = gWebGL.getProgramParameter(prg_handle, gWebGL.LINK_STATUS);
+    
+    if (!linked && !gWebGL.isContextLost()) {
+        var error_text = WebGL.getProgramInfoLog (prg_handle);
+        alert("Error in linking : " + error_text);
+
+        wgl_ctx.deleteProgram(prg_handle);
+		prg_handle = null;
+    }
+	
+	return prg_handle;
+}
+
+
+function CreateDataBuffer(inData, inUsage, inGroupCount) {
+	
+	// Create buffer
+	var buffer_handle = gWebGL.createBuffer();	
+    
+    // Make buffer active
+    gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, buffer_handle);
+	
+	// Load data in buffer
+    gWebGL.bufferData(gWebGL.ARRAY_BUFFER, inData, inUsage);
+	buffer_handle.mGroupCount  = inGroupCount;
+			
+	// Store item count with the buffer
+	buffer_handle.mLength = inData.length / inGroupCount;
+				
+   	gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, null);
+
+    CheckAndDisplayError("CreateDataBuffer() : ");
+
+	return buffer_handle;
+}
+
+
+function CreateFullFrameBufferAttributeData() {
+	// Create frame buffer coordinates which cover complete frame buffer
+	var complete_frame_buf_coords = [
+		 1.0,  1.0, 0.0, 1.0, // Right top
+		-1.0,  1.0, 0.0, 1.0, // Left  top
+		 1.0, -1.0, 0.0, 1.0, // Right bottom
+
+		-1.0,  1.0, 0.0, 1.0, // Left  top
+		-1.0, -1.0, 0.0, 1.0, // Left  bottom
+		 1.0, -1.0, 0.0, 1.0, // Right bottom
+	];
+	
+	return CreateDataBuffer(new Float32Array(complete_frame_buf_coords), gWebGL.STATIC_DRAW, 4);
+}
+
+
+function BindAttributeData(inDataBuffer, inName, inShaderPrg) {
+	// Bind attribute 
+ 	var a_location = gWebGL.getAttribLocation(inShaderPrg, inName);
+ 	
+ 	if (a_location == null) {
+ 		alert("Attribute not found");
+ 		return;
+ 	}
+         	
+	// Enable attribute index
+    gWebGL.enableVertexAttribArray(a_location);
+    
+    // Bind data
+    gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, inDataBuffer);
+
+	// Interpret data
+	// Args : attribute ix, component count, type, normalized, stride (bytes), offset (bytes)
+    gWebGL.vertexAttribPointer(a_location, inDataBuffer.mGroupCount, gWebGL.FLOAT, false, 0, 0);
+ 	
+ 	CheckAndDisplayError("BindAttributeData, (" + inName + ") :");
+
+    // For disable
+    return a_location;
+}
+
+ 
+<!-- Run the test -->
+
+function RunTest(inRepIx) {
+	if (gWebGL == null) {
+		alert("WebGL context not defined !");
+		return;
+	}
+
+ 	var vx_source = [
+		// Inputs
+		"attribute vec4 a_position; ",
+
+		"void main(void) { ",
+		"    gl_Position = a_position; ",
+		"} "
+ 	];
+
+	var fx_source = [
+	
+	    " precision mediump float; ",
+	    
+		// Inputs                     
+        "uniform float u_rep_ix; ",		
+
+        // Constants
+ 		"const vec4 red   = vec4(1.0, 0.0, 0.0, 1.0); ",
+ 		"const vec4 green = vec4(0.0, 1.0, 0.0, 1.0); ",
+
+        // Same floating point literal with different representations
+        // Will be exactly zero
+        "const float small_nr_a = 1.0E-9; ",
+
+        // Will be exactly zero
+        "const float small_nr_b = 0.000000001; ",
+        
+        // Not equal to zero		
+        "const float small_nr_c = 1.0/1000.0/1000.0/1000.0; ",		
+
+ 		"void main(void) { ",
+        
+             // Select a constant
+        "    float val; ",
+        "    if (u_rep_ix == 0.0) ",
+        "        val = small_nr_a; ",
+        "    else if (u_rep_ix == 1.0)",
+        "        val = small_nr_b; ",
+        "    else ",
+        "        val = small_nr_c; ",
+        
+             // Compare with zero
+        "    if (val == 0.0) ",
+        "        gl_FragColor = red; ",
+        "    else ",
+        "        gl_FragColor = green; ",
+		"} "
+	];
+
+	var shader_prg = CreateShaderProgram(vx_source, fx_source);
+
+	// Activate the program
+	gWebGL.useProgram(shader_prg);
+
+    // Bind representation selector     	
+    BindAndSetUniform("u_rep_ix", setter1f, inRepIx, shader_prg);
+
+    var attribute_data = CreateFullFrameBufferAttributeData(); 
+    var a_pos_location = BindAttributeData(attribute_data, "a_position", shader_prg); 
+
+	// Render triangles
+	gWebGL.drawArrays(gWebGL.TRIANGLES, 0, attribute_data.mLength);
+
+    CheckAndDisplayError("After drawArrays() : ");
+   	
+	// Disable
+	// Disable attributes
+    gWebGL.disableVertexAttribArray(a_pos_location);
+
+	// Use program
+	gWebGL.useProgram(null);	
+}
+
+
+<!-- OnLoad -->
+
+function OnLoad() {
+    // Test if WebGL element is on the page
+    var webgl_element = document.getElementById("ViewPort");
+    if (webgl_element == null) {
+        return;
+    }
+
+	// Set construction attributes
+	var web_gl_attr = GetDefaultWebGLAttributes();
+	web_gl_attr.depth     = false;
+	web_gl_attr.antialias = false;
+	
+    // Try to create the WebGL context
+    gWebGL = InitWebGL(webgl_element, web_gl_attr);
+    
+    if (gWebGL == null)
+    	return;
+    	
+  	var float_texture = gWebGL.getExtension("OES_texture_float");
+    	
+    gWebGL.viewport(0, 0, gWebGL.drawingBufferWidth, gWebGL.drawingBufferHeight);
+    
+    // Output window contains some spaces already ?!
+	var test_output = document.getElementById("TestOutput");
+	test_output.value = "";
+}
+
+</script>
+
+<style type="text/css">
+.view_port
+{
+	border: 1px solid black;
+}
+
+</style>
+</head>
+
+
+<!-- Body of page -->
+<body onload="OnLoad()">
+    <div class="Container">
+        <div>
+            <!-- The canvas object -->
+            <canvas id="ViewPort" class="view_port" width="400px" height="200px">
+                If you're seeing this, your web browser doesn't support the &lt;canvas>&gt; element. :-(
+            </canvas>
+        </div>
+
+        <div>
+            <ol>
+                <li><button class="Button" onclick=RunTest(0) title="Small nr specified by 1.0E-9">1.0E-9</button></li> 
+                <li><button class="Button" onclick=RunTest(1) title="Small nr specified by 0.000000001">0.000000001</button></li> 
+                <li><button class="Button" onclick=RunTest(2) title="Small nr specified by 1.0/1000.0/1000.0/1000.0">1.0/1000.0/1000.0/1000.0</button></li> 
+            </ol>
+        </div>
+        
+        <div>
+            <textarea id="TestOutput" rows="20" cols = "100">
+            </textarea>
+        </div>
+        
+    </div>
+</body>
+
+</html>
