@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Discard inside loop issue</title>
+
+<!--
+Author : Tibor den Ouden  
+Date   : 16 Jul 2014 
+-->
+
+<script>
+"use strict";
+
+<!-- WebGL initialization -->
+
+// Message when browser does not support WebGL
+var NO_WEBGL_BROWSER = '<a href="http://get.webgl.org">This page requires a browser that supports WebGL.</a>';
+
+
+// Message when computer does not support WebGL
+var NO_WEBGL_CONTEXT = '<a href="http://get.webgl.org/troubleshooting/">This computer does not support WebGL.</a>';
+
+
+// Creates html code which contains a message
+function CreateMessageHTML(inMsg) {
+  return '' +
+    '<table style="background-color: #8CE; width: 100%; height: 100%;"><tr>' +
+    '<td align="center">' +
+    '<div style="display: table-cell; vertical-align: middle;">' +
+    '<div style="">' + inMsg + '</div>' +
+    '</div>' +
+    '</td></tr></table>';
+};
+
+
+function CheckAndDisplayError(inMsg, inWgl) {
+    var error = inWgl.getError();
+    if (error != inWgl.NONE) {
+    	alert(inMsg + " : 0x" + error.toString(16));
+    	debugger;
+    } 
+}
+
+
+// Show the message in the page
+function ShowMessage(inMsg, inCanvas) {
+    var container = inCanvas.parentNode;
+    if (container) {
+    	container.innerHTML = CreateMessageHTML(inMsg);
+    }
+};
+
+
+function UISetTextContent(inValue, inShowElementId) {
+	var el = document.getElementById(inShowElementId);
+	
+	if (el != null) {
+		el.textContent = inValue;
+	}
+}
+
+    
+// Returns the webgl attributes with default values    
+function GetDefaultWebGLAttributes() {
+	return {
+    	alpha:                 true,
+    	depth:                 true,
+    	stencil:               false,
+    	antialias:             true,
+    	premultipliedAlpha:    true,
+    	preserveDrawingBuffer: false,
+	};
+}
+
+
+function setter1i(inLocation, inValue, inWgl) {
+	inWgl.uniform1i(inLocation, inValue);
+}
+
+
+function setter1f(inLocation, inValue, inWgl) {
+	inWgl.uniform1f(inLocation, inValue);
+}
+
+
+// Return a WebGL context from the canvas element
+function InitWebGL(inCanvas, inWglAttributes) {
+    // Check if browser supports WebGL
+   	if (!window.WebGLRenderingContext) {
+    	ShowMessage(NO_WEBGL_BROWSER, inCanvas);
+        return null;
+   	}
+
+	// Iterate over valid 3D context names
+	var context_names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
+	var wgl_context = null;
+	for (var n_ix = 0; n_ix < context_names.length; ++n_ix) {
+		try {
+			wgl_context = inCanvas.getContext(context_names[n_ix], inWglAttributes);
+		} 
+		catch(inException) {
+		}
+		
+		if (wgl_context != null) 
+			break;
+	}
+  
+    if (wgl_context == null) {
+    	ShowMessage(NO_WEBGL_CONTEXT, inCanvas);
+    	return;
+    }
+
+    var instanced_arrays_ext = wgl_context.getExtension("ANGLE_instanced_arrays");
+    if (instanced_arrays_ext == null) {
+        alert("Extension ANGLE_instanced_arrays not available");
+        return;
+    }
+
+    wgl_context.mExtInstArrays = instanced_arrays_ext;
+    
+    var fp_texture_ext = wgl_context.getExtension("OES_texture_float");
+    if (fp_texture_ext == null) {
+        alert("Extension OES_texture_float not available");
+        return;
+    }
+     
+	return wgl_context;
+}
+
+
+
+
+ 
+<!-- Utility functions for test -->
+
+function CreateShader(inSource, inType, inWgl) {
+ 	var handle = inWgl.createShader(inType);
+ 	
+ 	inWgl.shaderSource(handle, inSource);
+ 	inWgl.compileShader(handle);
+
+    // Check the compile status
+    var compiled = inWgl.getShaderParameter(handle, inWgl.COMPILE_STATUS);
+    if (compiled) {
+        // Retrieve translated shader code
+		var debug_ext = inWgl.getExtension("WEBGL_debug_shaders");
+		if (debug_ext !== null) { 					
+			var hlsl_code = debug_ext.getTranslatedShaderSource(handle);
+
+			console.log("HLSL code : \n" + hlsl_code);
+	    }
+    }
+    else if (!inWgl.isContextLost()) {
+        // Retrieve info
+        var error_text = inWgl.getShaderInfoLog(handle);
+        alert("Error compiling shader : " + error_text);
+        
+        inWgl.deleteShader(handle);
+        handle = null;
+    }
+
+	return handle;	
+}
+
+
+function BindAndSetUniform(inName, inSetter, inValue, inProgramHandle, inWgl) {
+	var location = inWgl.getUniformLocation(inProgramHandle, inName);
+	
+ 	if (location == null) {
+ 		alert("Uniform : " + inName  + " not found");
+ 		return;
+ 	}
+ 	
+ 	inSetter(location, inValue, inWgl);
+ 	
+ 	CheckAndDisplayError("BindAndSetUniform(), (" + inName + ") : ", inWgl);
+}
+
+
+function CreateShaderProgram(inVxSrc, inFxSrc, inWgl) {
+	// Vertex shader
+	var vx_handle = CreateShader(inVxSrc, inWgl.VERTEX_SHADER, inWgl);
+	
+	
+	// Fragment shader
+	var fx_handle = CreateShader(inFxSrc, inWgl.FRAGMENT_SHADER, inWgl);
+	
+	
+    // Create the shader program object
+    var prg_handle = inWgl.createProgram();
+
+    inWgl.attachShader(prg_handle, vx_handle);
+    inWgl.attachShader(prg_handle, fx_handle);
+
+    // Link the program
+    inWgl.linkProgram(prg_handle);
+
+    // Check the link status
+    var linked = inWgl.getProgramParameter(prg_handle, inWgl.LINK_STATUS);
+    
+    if (!linked && !inWgl.isContextLost()) {
+        var error_text = inWgl.getProgramInfoLog (prg_handle);
+        alert("Error in linking : " + error_text);
+
+        inWgl.deleteProgram(prg_handle);
+		prg_handle = null;
+    }
+	
+	return prg_handle;
+}
+
+
+function CreateDataBuffer(inData, inUsage, inGroupCount, inWgl) {
+	
+	// Create buffer
+	var buffer_handle = inWgl.createBuffer();	
+    
+    // Make buffer active
+    inWgl.bindBuffer(inWgl.ARRAY_BUFFER, buffer_handle);
+	
+	// Load data in buffer
+    inWgl.bufferData(inWgl.ARRAY_BUFFER, inData, inUsage);
+	buffer_handle.mGroupCount  = inGroupCount;
+			
+	// Store item count with the buffer
+	buffer_handle.mLength = inData.length / inGroupCount;
+				
+   	inWgl.bindBuffer(inWgl.ARRAY_BUFFER, null);
+
+    CheckAndDisplayError("CreateDataBuffer() : ", inWgl);
+
+	return buffer_handle;
+}
+
+
+// Create a texture which contains floating point data
+function CreateFloatingPointTexture(inData, inWidth, inHeight, inFormat, inShaderUnit, inWgl) {
+	// Create the texture		
+	var texture_handle = inWgl.createTexture();
+
+	// Make texture unit 0 active
+//	gWebGL.activeTexture(inWgl.TEXTURE0 + inShaderUnit);
+
+	// Make texture active	
+  	gWebGL.bindTexture(inWgl.TEXTURE_2D, texture_handle);
+  	
+  	// Set size and contents of texture 
+  	inWgl.pixelStorei(inWgl.UNPACK_ALIGNMENT, 4);
+  	inWgl.pixelStorei(inWgl.UNPACK_FLIP_Y_WEBGL, 0);
+  	inWgl.pixelStorei(inWgl.UNPACK_COLORSPACE_CONVERSION_WEBGL, inWgl.NONE);
+  	inWgl.pixelStorei(inWgl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+
+  	// Set the parameters 
+  	inWgl.texParameteri(inWgl.TEXTURE_2D, inWgl.TEXTURE_WRAP_S, 	   inWgl.CLAMP_TO_EDGE); 
+  	inWgl.texParameteri(inWgl.TEXTURE_2D, inWgl.TEXTURE_WRAP_T, 	   inWgl.CLAMP_TO_EDGE);
+  	inWgl.texParameteri(inWgl.TEXTURE_2D, inWgl.TEXTURE_MIN_FILTER, inWgl.NEAREST);
+  	inWgl.texParameteri(inWgl.TEXTURE_2D, inWgl.TEXTURE_MAG_FILTER, inWgl.NEAREST);
+  	
+  	// Set active texture unit
+    inWgl.texImage2D(inWgl.TEXTURE_2D, 0, inFormat, inWidth, inHeight, 0, inFormat, inWgl.FLOAT, inData);
+    
+    var error = inWgl.getError();
+    if (error != inWgl.NONE)
+    	alert("Error while creating texture : 0x" + error.toString(16)); 
+
+	inWgl.bindTexture(inWgl.TEXTURE_2D, null);
+
+	return texture_handle;	
+}
+
+
+function BindAttributeData(inDataBuffer, inName, inShaderPrg, inDivisor, inWgl) {
+	// Bind attribute 
+ 	var a_location = inWgl.getAttribLocation(inShaderPrg, inName);
+ 	
+ 	if (a_location == null) {
+ 		alert("Attribute not found");
+ 		return;
+ 	}
+         	
+	// Enable attribute index
+    inWgl.enableVertexAttribArray(a_location);
+    
+    // Bind data
+    inWgl.bindBuffer(inWgl.ARRAY_BUFFER, inDataBuffer);
+
+	// Interpret data
+	// Args : attribute ix, component count, type, normalized, stride (bytes), offset (bytes)
+    inWgl.vertexAttribPointer(a_location, inDataBuffer.mGroupCount, inWgl.FLOAT, false, 0, 0);
+
+    if (inDivisor != null) 	
+        inWgl.mExtInstArrays.vertexAttribDivisorANGLE(a_location, inDivisor); 
+ 	
+ 	CheckAndDisplayError("BindAttributeData, (" + inName + ") :", inWgl);
+
+    // For disable
+    return a_location;
+}
+
+
+function BindTexture(inUniform, inTextureHandle, inShaderUnit, inProgramHandle, inWgl) {
+
+ 	// Bind texture
+	// Make texture unit 0 active
+	inWgl.activeTexture(inWgl.TEXTURE0 + inShaderUnit);
+
+	// Set texture
+	inWgl.bindTexture(inWgl.TEXTURE_2D, inTextureHandle);
+
+	// Bind texture unit to shader
+ 	BindAndSetUniform(inUniform, setter1i, inShaderUnit, inProgramHandle,inWgl);
+
+    CheckAndDisplayError("BindTexture()", inWgl);
+}
+
+
+function CreateTextureGradientData(inWidth, inHeight, inChannelCount, inVal00, inGradX, inGradY) {
+    var size = inWidth * inHeight * inChannelCount;
+    var data = new Float32Array(size);
+    
+    var d_ix = 0;
+    
+    for (var y_ix = 0; y_ix < inHeight; ++y_ix) {
+        for (var x_ix = 0; x_ix < inWidth; ++x_ix) {
+//            var val =  inVal00 + x_ix * inGradX + y_ix * inGradY;
+            var val = ((Math.floor(x_ix/25) % 2) === 0) ? 0 : 1;
+            for (var c_ix = 0; c_ix < inChannelCount; ++c_ix) 
+                data[d_ix++] = val;
+        } 
+    }
+    
+    if (d_ix !== size)
+        debugger;
+    
+    return data;    
+}
+ 
+
+// Make sure number is in floating point format 
+function MakeFloatRepString(inValue) {
+    var str = "" + inValue;
+    if (str.indexOf(".") == -1)
+        str += ".0";
+ 
+    return str;
+}
+ 
+ 
+function LogOutput(inStr, inId) {
+    var id = (inId == null) ? 0 : inId;
+    var log = document.getElementById("TestOutput" + id)
+    log.value += "\n" + inStr;
+}
+ 
+
+function ClearLog(inId) { 
+    var id = (inId == null) ? 0 : inId;
+    var log = document.getElementById("TestOutput" + id)
+	log.value = "";
+}
+
+
+<!-- Globals -->
+var gWebGL;
+var gProgram;
+
+
+// Vertex shader
+var gVxSource = [
+	// Inputs
+	"attribute vec4      a_position; ",
+	"attribute vec2      a_tex_coords; ",
+
+    // Outputs
+    "varying vec2        v_tex_coords; ",
+    
+	"void main(void) { ",
+    "    v_tex_coords = a_tex_coords; ",
+	"    gl_Position  = a_position; ",
+	"} "
+].join("\n");
+
+
+var gFullFrameBufCoords = [
+	 1.0,  1.0, 0.0, 1.0, // Right top
+	-1.0,  1.0, 0.0, 1.0, // Left  top
+	 1.0, -1.0, 0.0, 1.0, // Right bottom
+
+	-1.0,  1.0, 0.0, 1.0, // Left  top
+	-1.0, -1.0, 0.0, 1.0, // Left  bottom
+	 1.0, -1.0, 0.0, 1.0, // Right bottom
+];
+
+var gFullFrameBufCoordsBuffer;
+
+
+var gFullTextureCoords = [
+	1.0, 1.0, // Right top
+	0.0, 1.0, // Left  top
+	1.0, 0.0, // Right bottom
+	 
+	0.0, 1.0, // Left  top
+	0.0, 0.0,  // Left  bottom
+	1.0, 0.0  // Right bottom
+];
+
+var gFullTextureCoordsBuffer;
+
+
+var gDataTexture;
+
+// Request animation frame id
+var gRequestId;
+
+
+// Count of rendered frames
+var gFrameCount = 0;
+
+
+<!-- Initialize test -->
+function InitTest() {
+    // Test if WebGL element is on the page
+    var webgl_element = document.getElementById("ViewPort");
+    if (webgl_element == null) {
+        return false;
+    }
+
+	// Set construction attributes
+	var web_gl_attr = GetDefaultWebGLAttributes();
+	web_gl_attr.depth     = false;
+	web_gl_attr.antialias = false;
+	
+    // Try to create the WebGL context
+    gWebGL = InitWebGL(webgl_element, web_gl_attr);
+    
+    if (gWebGL == null)
+    	return false;
+    	
+    gWebGL.viewport(0, 0, gWebGL.drawingBufferWidth, gWebGL.drawingBufferHeight);
+    
+    gFullFrameBufCoordsBuffer = CreateDataBuffer(new Float32Array(gFullFrameBufCoords), gWebGL.STATIC_DRAW, 4, gWebGL);     
+    gFullTextureCoordsBuffer  = CreateDataBuffer(new Float32Array(gFullTextureCoords),  gWebGL.STATIC_DRAW, 2, gWebGL);    
+	
+    var width  = gWebGL.drawingBufferWidth;
+    var height = gWebGL.drawingBufferHeight;
+    var grad_data = CreateTextureGradientData(width, height, 4, -1, 0, 0);
+    gDataTexture  = CreateFloatingPointTexture(grad_data, width, height, gWebGL.RGBA, 0, gWebGL); 
+	
+	return true;
+}
+
+
+function RunTest(inId) {
+    // InId : 0 : discard in loop
+    // InId : 1 : discard outside loop
+    
+	if (gWebGL == null) {
+		alert("WebGL context not defined !");
+		return;
+	}
+
+	// Clear frame buffer blue
+    gWebGL.clearColor(0, 0, 1, 1); 	
+    gWebGL.clear(gWebGL.COLOR_BUFFER_BIT);
+
+    var height = gWebGL.drawingBufferHeight;
+
+    // Set parameters
+    var ft_source = [
+        "precision mediump float; ",
+        
+	    // Constants
+	    "const mediump float TEXEL_COUNT_V = " + MakeFloatRepString(height) + "; ",
+	    "const mediump float TEXEL_HEIGHT  = 1.0 / TEXEL_COUNT_V; ",
+    	"const mediump float SEP_IX        = " + MakeFloatRepString(height / 2) + "; ",
+
+        "const vec4 GREEN = vec4(0.0, 1.0, 0.0, 1.0); ",
+        "const vec4 RED   = vec4(1.0, 0.0, 0.0, 1.0); ",
+
+    	// Input
+    	"varying mediump vec2 v_tex_coords; ",
+    	
+    	"uniform sampler2D u_data; ",
+    	
+    	"// Without this function or directly returning the data, the issue does not occur",
+    	"mediump vec4 UnpackData(in vec4 inData) {",
+    	"	 mediump float s = inData.x;",
+    	
+    	"     // Note s is always -1 ",
+    	"     // mod(-1, 1) = -1 - 1 * floor(-1/1) = -1 - (-1) = 0 ",
+    	"     // So return value = (0, 0, -1, 0) ",
+    	"    return vec4(0.0, 0.0, mod(s, 1.0) - 1.0, 0.0); ",
+        "} ",
+    
+    	"void main(void) {",
+    	     // Set initial color 
+    	"    gl_FragColor = GREEN; ",
+    	
+    	"    if (gl_FragCoord.y <= SEP_IX) {",
+    	"        mediump vec2 addr = vec2(v_tex_coords.x, TEXEL_HEIGHT);",
+
+    	"        bool exec_discard = false;",
+    	"        for (float e_ix = 0.0; e_ix < TEXEL_COUNT_V; ++e_ix) {",
+    	"            vec4 entry = texture2D(u_data, addr);",
+    	"            mediump vec4 unpack = UnpackData(entry);",
+    	
+    	"             // Buffer is filled with -1, unpack is always (0, 0, -1, 0) ",
+    	"             // So discard is always triggered  ",
+    	"            if (unpack.z == -1.0) {",
+    	
+    	((inId === 0) ? "		     discard;" : "//		      discard;"),
+    	
+    	"                exec_discard = true;",
+    	"            }",
+    
+    	"            addr.y += unpack.z * TEXEL_HEIGHT;",
+    	"        }",
+    
+    	"        if (exec_discard) {",
+    	
+    	((inId === 1) ? "		discard;" : "//		  discard;"),
+    	
+        "        } ",
+    	"    }",
+    	"    else {",
+    	"        gl_FragColor = RED;",
+    	"    }",
+    	"}",
+    ].join("\n");    
+
+    ClearLog(inId);    
+    LogOutput(ft_source, inId);
+    
+    gProgram = CreateShaderProgram(gVxSource, ft_source, gWebGL);
+
+	// Activate the program
+	gWebGL.useProgram(gProgram);
+
+    var a_pos_location = BindAttributeData(gFullFrameBufCoordsBuffer, "a_position",   gProgram, null, gWebGL);
+    var a_tex_location = BindAttributeData(gFullTextureCoordsBuffer,  "a_tex_coords", gProgram, null, gWebGL);
+     
+    BindTexture("u_data", gDataTexture, 0, gProgram, gWebGL);
+
+	// Render triangles
+	gWebGL.drawArrays(gWebGL.TRIANGLES, 0, gFullFrameBufCoordsBuffer.mLength);
+
+    CheckAndDisplayError("After drawArrays() : ", gWebGL);
+   	
+	// Disable
+    gWebGL.disableVertexAttribArray(a_pos_location);
+    gWebGL.disableVertexAttribArray(a_tex_location);
+	gWebGL.useProgram(null);
+}
+
+
+<!-- OnLoad -->
+
+function OnLoad() {
+    InitTest()
+}
+
+</script>
+
+<style type="text/css">
+.view_port
+{
+	border: 1px solid black;
+}
+
+</style>
+</head>
+
+
+<!-- Body of page -->
+<body onload="OnLoad()">
+    <div class="Container">
+        Framecount : <label id="FrameCounter">0</label>
+        <div>
+            <!-- The canvas object -->
+            <canvas id="ViewPort" class="view_port" width="400px" height="200px">
+                If you're seeing this, your web browser doesn't support the &lt;canvas>&gt; element. :-(
+            </canvas>
+        </div>
+
+        <div>
+                <button class="Button" onclick=RunTest(0) title="Discard in loop">Discard in loop</button> 
+                <button class="Button" onclick=RunTest(1) title="Discard outside loop">Discard outside loop</button> 
+        </div>
+        
+        <div>
+            <textarea id="TestOutput0" rows="50" cols = "100"></textarea>
+            <textarea id="TestOutput1" rows="50" cols = "100"></textarea>
+        </div>
+        
+    </div>
+</body>
+
+</html>
