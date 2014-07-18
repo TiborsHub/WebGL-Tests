@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>GLSL Constructor arguments</title>
+
+<!--
+Test to show invalid combinations of arguments to constructors for vector and matrix
+
+ Author : Tibor den Ouden  
+-->
+
+<script>
+<!-- Globals -->
+	
+gWebGL = null;
+gTestOutput = null;
+
+
+<!-- WebGL initialization -->
+
+// Message when browser does not support WebGL
+var NO_WEBGL_BROWSER = '<a href="http://get.webgl.org">This page requires a browser that supports WebGL.</a>';
+
+
+// Message when computer does not support WebGL
+var NO_WEBGL_CONTEXT = '<a href="http://get.webgl.org/troubleshooting/">This computer does not support WebGL.</a>';
+
+
+// Creates html code which contains a message
+function CreateMessageHTML(inMsg) {
+  return '' +
+    '<table style="background-color: #8CE; width: 100%; height: 100%;"><tr>' +
+    '<td align="center">' +
+    '<div style="display: table-cell; vertical-align: middle;">' +
+    '<div style="">' + inMsg + '</div>' +
+    '</div>' +
+    '</td></tr></table>';
+};
+
+
+// Show the message in the page
+function ShowMessage(inMsg, inCanvas) {
+    var container = inCanvas.parentNode;
+    if (container) {
+    	container.innerHTML = CreateMessageHTML(inMsg);
+    }
+};
+
+
+// Log output
+function LogTestOutput(inText) {
+	if (gTestOutput != null)
+		gTestOutput.value += inText + "\n";
+		
+	console.log(inText);	
+}
+
+    
+// Returns the webgl attributes with default values    
+function GetDefaultWebGLAttributes() {
+	return {
+    	alpha:                 true,
+    	depth:                 true,
+    	stencil:               false,
+    	antialias:             true,
+    	premultipliedAlpha:    true,
+    	preserveDrawingBuffer: false,
+	};
+}
+
+
+// Return a WebGL context from the canvas element
+function InitWebGL(inCanvas, inWglAttributes) {
+    // Check if browser supports WebGL
+   	if (!window.WebGLRenderingContext) {
+    	ShowMessage(NO_WEBGL_BROWSER, inCanvas);
+        return null;
+   	}
+
+	// Iterate over valid 3D context names
+	var context_names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
+	var wgl_context = null;
+	for (var n_ix = 0; n_ix < context_names.length; ++n_ix) {
+		try {
+			wgl_context = inCanvas.getContext(context_names[n_ix], inWglAttributes);
+		} 
+		catch(inException) {
+		}
+		
+		if (wgl_context != null) 
+			break;
+	}
+  
+    if (wgl_context == null) {
+    	ShowMessage(NO_WEBGL_CONTEXT, inCanvas);
+    }
+
+	return wgl_context;
+}
+
+ 
+<!-- Utility functions for test -->
+
+
+// Returns name of shader type
+function GetShaderTypeName(inType) { 
+	switch(inType) {
+		case gWebGL.VERTEX_SHADER: 	 return "VERTEX SHADER";
+		case gWebGL.FRAGMENT_SHADER: return "FRAGMENT SHADER";
+		default: 					 return "UNKNOWN SHADER TYPE (" + inType + ")";	 
+	}
+}
+
+
+function CreateShader(inSource, inType) {
+ 	var handle = gWebGL.createShader(inType);
+
+	var type_name = GetShaderTypeName(inType);
+	
+	// Log GLSL code
+	LogTestOutput("\nGLSL " + type_name + " BEGIN ->\n" + inSource + "\n<- GLSL " + type_name + " END\n");
+	 	
+ 	gWebGL.shaderSource(handle, inSource);
+ 	gWebGL.compileShader(handle);
+
+    // Check the compile status
+    var compiled = gWebGL.getShaderParameter(handle, gWebGL.COMPILE_STATUS);
+
+	if (compiled) {    
+		var debug_ext = gWebGL.getExtension("WEBGL_debug_shaders");
+		if (debug_ext !== null) { 					
+			var hlsl_code = debug_ext.getTranslatedShaderSource(handle);
+			LogTestOutput("\nHLSL " + type_name + " BEGIN ->\n" + hlsl_code + "\n<- HLSL " + type_name + " END\n");
+		}
+		else
+			LogTestOutput("Extension WEBGL_debug_shaders not availabe, no retrieval of HLSL code possible");
+	}
+	    
+    if (!compiled && !gWebGL.isContextLost()) {
+        // Retrieve info
+        var error_text = gWebGL.getShaderInfoLog(handle);
+        alert("Error compiling shader : " + error_text);
+        
+        gWebGL.deleteShader(handle);
+        handle = null;
+    }
+
+	return handle;	
+}
+
+
+function CreateShaderProgram() {
+	// Vertex shader
+ 	var vx_source = [
+		// Inputs
+		"attribute vec4 a_position;         ",
+
+		"void main(void) {                  ",
+		"    gl_Position = a_position;      ",
+		"}                                  "
+ 	];
+
+	vx_handle = CreateShader(vx_source.join("\n"), gWebGL.VERTEX_SHADER);
+	
+	
+	// Fragment shader
+	var fx_source = [
+ 		"void main(void) {                                          ",
+ 		"    mediump vec4 red = vec4(1.0, 0.0, 0.0, 1.0);           ",
+		"    gl_FragColor = red; ",
+		"} "
+	]
+	
+	fx_handle = CreateShader(fx_source.join("\n"), gWebGL.FRAGMENT_SHADER);
+	
+	
+    // Create the shader program object
+    var prg_handle = gWebGL.createProgram();
+
+    gWebGL.attachShader(prg_handle, vx_handle);
+    gWebGL.attachShader(prg_handle, fx_handle);
+
+    // Link the program
+    gWebGL.linkProgram(prg_handle);
+
+    // Check the link status
+    var linked = gWebGL.getProgramParameter(prg_handle, gWebGL.LINK_STATUS);
+    
+    if (!linked && !gWebGL.isContextLost()) {
+        var error_text = WebGL.getProgramInfoLog (prg_handle);
+        alert("Error in linking : " + error_text);
+
+        wgl_ctx.deleteProgram(prg_handle);
+		prg_handle = null;
+    }
+	
+	return prg_handle;
+}
+
+
+function CreateDataBuffer(inData, inUsage, inGroupCount) {
+	
+	// Create buffer
+	var buffer_handle = gWebGL.createBuffer();	
+    
+    // Make buffer active
+    gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, buffer_handle);
+	
+	// Load data in buffer
+    gWebGL.bufferData(gWebGL.ARRAY_BUFFER, inData, inUsage);
+	buffer_handle.mGroupCount  = inGroupCount;
+			
+	// Store item count with the buffer
+	buffer_handle.mLength = inData.length / inGroupCount;
+				
+   	gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, null);
+
+	return buffer_handle;
+}
+
+
+function CreateAttributeData() {
+	// Create frame buffer coordinates which cover complete frame buffer
+	var complete_frame_buf_coords = [
+		 1.0,  1.0, 0.0, 1.0, // Right top
+		-1.0,  1.0, 0.0, 1.0, // Left  top
+		 1.0, -1.0, 0.0, 1.0, // Right bottom
+
+		-1.0,  1.0, 0.0, 1.0, // Left  top
+		-1.0, -1.0, 0.0, 1.0, // Left  bottom
+		 1.0, -1.0, 0.0, 1.0, // Right bottom
+	];
+	
+	return CreateDataBuffer(new Float32Array(complete_frame_buf_coords), gWebGL.STATIC_DRAW, 4);
+}
+
+ 
+<!-- Run the test -->
+
+function RunTest() {
+	if (gWebGL == null) {
+		alert("WebGL context not defined !");
+		return;
+	}
+
+	var shader_program = CreateShaderProgram();
+	var attribute_data = CreateAttributeData();
+	
+	// Activate the program
+	gWebGL.useProgram(shader_program);
+	
+	// Bind attribute 
+ 	var a_pos_location = gWebGL.getAttribLocation(shader_program, "a_position");
+ 	
+ 	if (a_pos_location == null) {
+ 		alert("Attribute not found");
+ 		return;
+ 	}
+ 	
+	// Enable attribute index
+    gWebGL.enableVertexAttribArray(a_pos_location);
+    
+    // Bind data
+    gWebGL.bindBuffer(gWebGL.ARRAY_BUFFER, attribute_data);
+
+	// Interpret data
+	// Args : attribute ix, component count, type, normalized, stride (bytes), offset (bytes)
+    gWebGL.vertexAttribPointer(a_pos_location, attribute_data.mGroupCount, gWebGL.FLOAT, false, 0, 0);
+ 	
+	// Render triangles
+	gWebGL.drawArrays(gWebGL.TRIANGLES, 0, attribute_data.mLength);
+	
+	// Disable
+}
+
+
+<!-- OnLoad -->
+
+function OnLoad() {
+    // Test if WebGL element is on the page
+    var webgl_element = document.getElementById("ViewPort");
+    if (webgl_element == null) {
+        return;
+    }
+
+	// Set construction attributes
+	var web_gl_attr = GetDefaultWebGLAttributes();
+	web_gl_attr.depth     = false;
+	web_gl_attr.antialias = false;
+	
+    // Try to create the WebGL context
+    gWebGL = InitWebGL(webgl_element, web_gl_attr);
+    
+    if (gWebGL == null)
+    	return;
+
+    // Output window contains some spaces already ?!
+	gTestOutput = document.getElementById("TestOutput");
+	gTestOutput.value = "";
+    	
+	var debug_ext = gWebGL.getExtension("WEBGL_debug_shaders");
+	if (debug_ext === null) {
+		LogTestOutput("Extension WEBGL_debug_shaders not availabe, no retrieval of HLSL code possible");
+		LogTestOutput("Chrome : start with --enable-privileged-webgl-extensions as commandline parameter");
+	}
+    else 
+		LogTestOutput("Extension WEBGL_debug_shaders availabe, retrieval of HLSL code possible");
+    	
+    gWebGL.viewport(0, 0, gWebGL.drawingBufferWidth, gWebGL.drawingBufferHeight);
+}
+
+</script>
+
+<style type="text/css">
+.view_port
+{
+	border: 1px solid black;
+}
+
+</style>
+</head>
+
+
+<!-- Body of page -->
+<body onload="OnLoad()">
+    <div class="Container">
+        <div>
+            <!-- The canvas object -->
+            <canvas id="ViewPort" class="view_port" width="400px" height="200px">
+                If you're seeing this, your web browser doesn't support the &lt;canvas>&gt; element. :-(
+            </canvas>
+        </div>
+
+        <div>
+            <ol>
+                <li><button class="Button" onclick=RunTest() title="Select a random value to read back">Run test</button></li> 
+            </ol>
+        </div>
+        
+        <div>
+            <textarea id="TestOutput" rows="30" cols = "150">
+            </textarea>
+        </div>
+        
+    </div>
+</body>
+
+</html>
