@@ -111,14 +111,6 @@ function InitWebGL(inCanvas, inWglAttributes) {
     	return;
     }
 
-    var instanced_arrays_ext = wgl_context.getExtension("ANGLE_instanced_arrays");
-    if (instanced_arrays_ext == null) {
-        alert("Extension ANGLE_instanced_arrays not available");
-        return;
-    }
-
-    wgl_context.mExtInstArrays = instanced_arrays_ext;
-    
     var fp_texture_ext = wgl_context.getExtension("OES_texture_float");
     if (fp_texture_ext == null) {
         alert("Extension OES_texture_float not available");
@@ -468,6 +460,8 @@ function RunTest(inId) {
 
     // Set parameters
     var ft_source = [
+        "// Note : Viewport is first cleared with blue",
+        "",
         "precision mediump float; ",
         
 	    // Constants
@@ -575,7 +569,6 @@ function OnLoad() {
 <!-- Body of page -->
 <body onload="OnLoad()">
     <div class="Container">
-        Framecount : <label id="FrameCounter">0</label>
         <div>
             <!-- The canvas object -->
             <canvas id="ViewPort" class="view_port" width="400px" height="200px">
@@ -585,7 +578,7 @@ function OnLoad() {
 
         <div>
                 <button class="Button" onclick=RunTest(0) title="Discard in loop">Discard in loop</button> 
-                <button class="Button" onclick=RunTest(1) title="Discard outside loop">Discard outside loop</button> 
+                <button class="Button" onclick=RunTest(1) title="Discard outside loop">Discard outside loop (expected behavior)</button> 
         </div>
         
         <div>
